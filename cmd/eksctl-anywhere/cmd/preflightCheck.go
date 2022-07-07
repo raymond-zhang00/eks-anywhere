@@ -134,7 +134,7 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 		WithCliConfig(cliConfig).
 		WithClusterManager(clusterSpec.Cluster).
 		WithProvider(preOpt.fileName, clusterSpec.Cluster, preOpt.skipIpCheck, preOpt.hardwareCSVPath, preOpt.forceClean, preOpt.tinkerbellBootstrapIP).
-		//WithFluxAddonClient(clusterSpec.Cluster, clusterSpec.FluxConfig, cliConfig).
+		WithFluxAddonClient(clusterSpec.Cluster, clusterSpec.FluxConfig, cliConfig).
 		//WithWriter().
 		WithEksdInstaller().
 		WithPackageInstaller(clusterSpec, preOpt.installPackages).
@@ -263,7 +263,7 @@ func (v *ValidateTask) Run(ctx context.Context, commandContext *task.CommandCont
 	logger.Info("Performing validate task")
 	runner := validations.NewRunner()
 	runner.Register(v.providerValidation(ctx, commandContext)...)
-	//runner.Register(commandContext.AddonManager.Validations(ctx, commandContext.ClusterSpec)...)
+	runner.Register(commandContext.AddonManager.Validations(ctx, commandContext.ClusterSpec)...)
 	runner.Register(v.validations(ctx, commandContext)...)
 
 	//runner.PrintValidations()
