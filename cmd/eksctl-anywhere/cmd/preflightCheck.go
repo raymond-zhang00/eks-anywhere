@@ -138,6 +138,7 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 		//WithWriter().
 		WithEksdInstaller().
 		WithPackageInstaller(clusterSpec, preOpt.installPackages).
+		SkipWriter(). // Added to skip file writing process
 		Build(ctx)
 	if err != nil {
 		return err

@@ -23,6 +23,10 @@ func NewWriter(dir string) (FileWriter, error) {
 	return &writer{dir: dir}, nil
 }
 
+func NoWriter() (FileWriter, error) {
+	return &writer{dir: ""}, nil
+}
+
 func (t *writer) Write(fileName string, content []byte, f ...FileOptionsFunc) (string, error) {
 	op := defaultFileOptions() // Default file options. -->> temporary file with default permissions
 	for _, optionFunc := range f {
