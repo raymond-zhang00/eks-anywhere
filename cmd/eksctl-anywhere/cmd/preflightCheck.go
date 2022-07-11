@@ -54,7 +54,7 @@ var preOpt = &preflightOptions{}
 var preflightCmd = &cobra.Command{
 	Use:     "preflight -f <cluster-config-file> [flags]",
 	Short:   "Perform preflight checks to validate cluster config",
-	Long:    "This command performs preflight validation checks before initializng a cluster on vsphere",
+	Long:    "This command performs preflight validation checks before cluster creation",
 	PreRunE: preRunPreflight,
 	RunE:    preOpt.preflight,
 }
@@ -69,8 +69,11 @@ func init() {
 		"",
 		TinkerbellHardwareCSVFlagDescription,
 	)
+
+	// Keeping all input flags in case they affect the command
+	// Updated the force-cleanup to true to clean up artifacts
 	preflightCmd.Flags().StringVar(&preOpt.tinkerbellBootstrapIP, "tinkerbell-bootstrap-ip", "", "Override the local tinkerbell IP in the bootstrap cluster")
-	preflightCmd.Flags().BoolVar(&preOpt.forceClean, "force-cleanup", false, "Force deletion of previously created bootstrap cluster")
+	preflightCmd.Flags().BoolVar(&preOpt.forceClean, "force-cleanup", true, "Force deletion of previously created bootstrap cluster")
 	preflightCmd.Flags().BoolVar(&preOpt.skipIpCheck, "skip-ip-check", false, "Skip check for whether cluster control plane ip is in use")
 	preflightCmd.Flags().StringVar(&preOpt.bundlesOverride, "bundles-override", "", "Override default Bundles manifest (not recommended)")
 	preflightCmd.Flags().StringVar(&preOpt.managementKubeconfig, "kubeconfig", "", "Management cluster kubeconfig file")
@@ -114,13 +117,14 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 		)
 	}
 
-	// Need to check what this does, looks like it outputs a spec from the file
+	// Generates spec from cluster from options
 	clusterSpec, err := newClusterSpec(preOpt.clusterOptions)
 	if err != nil {
 		return err
 	}
 
 	// This looks like it does some maxwaitpermachine config and git checks
+	//Could be moved locally if preflight specific
 	cliConfig := buildCliConfig(clusterSpec)
 	// Then this does some flux and cloudstack additional config and gets additional directories
 	dirs, err := preOpt.directoriesToMount(clusterSpec, cliConfig)
@@ -130,22 +134,23 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 
 	// Factory dependency production
 	deps, err := dependencies.ForSpec(ctx, clusterSpec).WithExecutableMountDirs(dirs...).
-		//WithBootstrapper().
+		WithBootstrapper().
 		WithCliConfig(cliConfig).
 		WithClusterManager(clusterSpec.Cluster).
 		WithProvider(preOpt.fileName, clusterSpec.Cluster, preOpt.skipIpCheck, preOpt.hardwareCSVPath, preOpt.forceClean, preOpt.tinkerbellBootstrapIP).
 		WithFluxAddonClient(clusterSpec.Cluster, clusterSpec.FluxConfig, cliConfig).
-		//WithWriter().
+		WithWriter().
 		WithEksdInstaller().
 		WithPackageInstaller(clusterSpec, preOpt.installPackages).
-		SkipWriter(). // Added to skip file writing process
+		//SkipWriter(). // Added to skip file writing process for docker provider - will not work with vSphere
 		Build(ctx)
 	if err != nil {
 		return err
 	}
 	defer close(ctx, deps)
 
-	// Check Supported Providers
+	// Check currently supported providers - maybe this should be broken out into something separate
+	// so that preflight and create cluster have a single source?
 	if !features.IsActive(features.CloudStackProvider()) && deps.Provider.Name() == constants.CloudStackProviderName {
 		return fmt.Errorf("provider cloudstack is not supported in this release")
 	}
@@ -154,18 +159,18 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 		return fmt.Errorf("provider snow is not supported in this release")
 	}
 
-	// Create cluster - Define cluster locally insted of using create.go
+	// Create cluster - Define structure locally insted of using create.go
 	createCluster := &Validate{
-		//bootstrapper:     deps.Bootstrapper,
-		provider:       deps.Provider,
-		clusterManager: deps.ClusterManager,
-		addonManager:   deps.FluxAddonClient,
-		//writer:           deps.Writer,
+		bootstrapper:     deps.Bootstrapper,
+		provider:         deps.Provider,
+		clusterManager:   deps.ClusterManager,
+		addonManager:     deps.FluxAddonClient,
+		writer:           deps.Writer,
 		eksdInstaller:    deps.EksdInstaller,
 		packageInstaller: deps.PackageInstaller,
 	}
 
-	// Perform additional checks for management config
+	// Specify management cluster config
 	var cluster *types.Cluster
 	if clusterSpec.ManagementCluster == nil {
 		cluster = &types.Cluster{
@@ -201,6 +206,7 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 	return err
 }
 
+// Mount directories - from cmd/createcluster
 func (preOpt *preflightOptions) directoriesToMount(clusterSpec *cluster.Spec, cliConfig *config.CliConfig) ([]string, error) {
 	dirs := preOpt.mountDirs()
 	fluxConfig := clusterSpec.FluxConfig
@@ -226,6 +232,7 @@ func (preOpt *preflightOptions) directoriesToMount(clusterSpec *cluster.Spec, cl
 	return dirs, nil
 }
 
+// Logic below is all modified from cmd/create Run and SetAndValidateTask
 // Define run function
 func (v *Validate) Run(ctx context.Context, clusterSpec *cluster.Spec, validator interfaces.Validator, forceCleanup bool) error {
 	if forceCleanup {
@@ -236,12 +243,12 @@ func (v *Validate) Run(ctx context.Context, clusterSpec *cluster.Spec, validator
 		}
 	}
 	commandContext := &task.CommandContext{
-		//Bootstrapper:     v.bootstrapper,
-		Provider:       v.provider,
-		ClusterManager: v.clusterManager,
-		AddonManager:   v.addonManager,
-		ClusterSpec:    clusterSpec,
-		//Writer:           v.writer,
+		Bootstrapper:     v.bootstrapper,
+		Provider:         v.provider,
+		ClusterManager:   v.clusterManager,
+		AddonManager:     v.addonManager,
+		ClusterSpec:      clusterSpec,
+		Writer:           v.writer,
 		Validations:      validator,
 		EksdInstaller:    v.eksdInstaller,
 		PackageInstaller: v.packageInstaller,
