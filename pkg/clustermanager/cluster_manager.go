@@ -15,6 +15,7 @@ import (
 
 	"github.com/aws/eks-anywhere/pkg/api/v1alpha1"
 	"github.com/aws/eks-anywhere/pkg/cluster"
+	"github.com/aws/eks-anywhere/pkg/clusterapi"
 	"github.com/aws/eks-anywhere/pkg/clustermanager/internal"
 	"github.com/aws/eks-anywhere/pkg/clustermarshaller"
 	"github.com/aws/eks-anywhere/pkg/constants"
@@ -36,6 +37,7 @@ const (
 	machineBackoff         = 1 * time.Second
 	machinesMinWait        = 30 * time.Minute
 	moveCAPIWait           = 15 * time.Minute
+	clusterWaitStr         = "60m"
 	ctrlPlaneWaitStr       = "60m"
 	etcdWaitStr            = "60m"
 	deploymentWaitStr      = "30m"
@@ -61,6 +63,7 @@ type ClusterClient interface {
 	ApplyKubeSpecFromBytes(ctx context.Context, cluster *types.Cluster, data []byte) error
 	ApplyKubeSpecFromBytesWithNamespace(ctx context.Context, cluster *types.Cluster, data []byte, namespace string) error
 	ApplyKubeSpecFromBytesForce(ctx context.Context, cluster *types.Cluster, data []byte) error
+	WaitForClusterReady(ctx context.Context, cluster *types.Cluster, timeout string, clusterName string) error
 	WaitForControlPlaneReady(ctx context.Context, cluster *types.Cluster, timeout string, newClusterName string) error
 	WaitForControlPlaneNotReady(ctx context.Context, cluster *types.Cluster, timeout string, newClusterName string) error
 	WaitForManagedExternalEtcdReady(ctx context.Context, cluster *types.Cluster, timeout string, newClusterName string) error
@@ -158,6 +161,11 @@ func (c *ClusterManager) MoveCAPI(ctx context.Context, from, to *types.Cluster, 
 	logger.V(3).Info("Waiting for management machines to be ready before move")
 	labels := []string{clusterv1.MachineControlPlaneLabelName, clusterv1.MachineDeploymentLabelName}
 	if err := c.waitForNodesReady(ctx, from, clusterName, labels, checkers...); err != nil {
+		return err
+	}
+
+	logger.V(3).Info("Waiting for all clusters to be ready before move")
+	if err := c.waitForAllClustersReady(ctx, from, clusterWaitStr); err != nil {
 		return err
 	}
 
@@ -571,8 +579,8 @@ func (c *ClusterManager) InstallStorageClass(ctx context.Context, cluster *types
 	return nil
 }
 
-func (c *ClusterManager) InstallMachineHealthChecks(ctx context.Context, workloadCluster *types.Cluster, provider providers.Provider) error {
-	mhc, err := provider.GenerateMHC()
+func (c *ClusterManager) InstallMachineHealthChecks(ctx context.Context, clusterSpec *cluster.Spec, workloadCluster *types.Cluster, provider providers.Provider) error {
+	mhc, err := provider.GenerateMHC(clusterSpec)
 	if err != nil {
 		return err
 	}
@@ -844,8 +852,34 @@ func (c *ClusterManager) waitForAllControlPlanes(ctx context.Context, cluster *t
 	return nil
 }
 
+func (c *ClusterManager) waitForAllClustersReady(ctx context.Context, cluster *types.Cluster, waitStr string) error {
+	clusters, err := c.clusterClient.GetClusters(ctx, cluster)
+	if err != nil {
+		return fmt.Errorf("getting clusters: %v", err)
+	}
+
+	for _, clu := range clusters {
+		err = c.clusterClient.WaitForClusterReady(ctx, cluster, waitStr, clu.Metadata.Name)
+		if err != nil {
+			return fmt.Errorf("waiting for cluster %s to be ready: %v", clu.Metadata.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func machineDeploymentsToDelete(currentSpec, newSpec *cluster.Spec) []string {
+	nodeGroupsToDelete := cluster.NodeGroupsToDelete(currentSpec, newSpec)
+	machineDeployments := make([]string, 0, len(nodeGroupsToDelete))
+	for _, group := range nodeGroupsToDelete {
+		mdName := clusterapi.MachineDeploymentName(newSpec, group)
+		machineDeployments = append(machineDeployments, mdName)
+	}
+	return machineDeployments
+}
+
 func (c *ClusterManager) removeOldWorkerNodeGroups(ctx context.Context, workloadCluster *types.Cluster, provider providers.Provider, currentSpec, newSpec *cluster.Spec) error {
-	machineDeployments := provider.MachineDeploymentsToDelete(workloadCluster, currentSpec, newSpec)
+	machineDeployments := machineDeploymentsToDelete(currentSpec, newSpec)
 	for _, machineDeploymentName := range machineDeployments {
 		machineDeployment, err := c.clusterClient.GetMachineDeployment(ctx, machineDeploymentName, executables.WithKubeconfig(workloadCluster.KubeconfigFile), executables.WithNamespace(constants.EksaSystemNamespace))
 		if err != nil {
