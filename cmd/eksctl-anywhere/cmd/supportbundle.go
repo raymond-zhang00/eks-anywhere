@@ -61,7 +61,7 @@ func init() {
 }
 
 func (csbo *createSupportBundleOptions) validate(ctx context.Context) error {
-	clusterConfig, err := commonValidation(ctx, csbo.fileName)
+	clusterConfig, err := validations.CommonValidation(ctx, csbo.fileName)
 	if err != nil {
 		return err
 	}

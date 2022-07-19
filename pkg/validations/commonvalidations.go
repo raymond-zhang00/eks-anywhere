@@ -1,4 +1,4 @@
-package cmd
+package validations
 
 import (
 	"context"
@@ -7,23 +7,27 @@ import (
 
 	"github.com/aws/eks-anywhere/pkg/api/v1alpha1"
 	"github.com/aws/eks-anywhere/pkg/executables"
-	"github.com/aws/eks-anywhere/pkg/validations"
 )
 
-func commonValidation(ctx context.Context, clusterConfigFile string) (*v1alpha1.Cluster, error) {
+// Moved from cmd/validations.go
+
+func CommonValidation(ctx context.Context, clusterConfigFile string) (*v1alpha1.Cluster, error) {
+
+	// Create cluster runs config validations before docker, everything else runs docker first
+
 	docker := executables.BuildDockerExecutable()
-	err := validations.CheckMinimumDockerVersion(ctx, docker)
+	err := CheckMinimumDockerVersion(ctx, docker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate docker: %v", err)
 	}
 	if runtime.GOOS == "darwin" {
-		err = validations.CheckDockerDesktopVersion(ctx, docker)
+		err = CheckDockerDesktopVersion(ctx, docker)
 		if err != nil {
 			return nil, fmt.Errorf("failed to validate docker desktop: %v", err)
 		}
 	}
-	validations.CheckDockerAllocatedMemory(ctx, docker)
-	clusterConfigFileExist := validations.FileExists(clusterConfigFile)
+	CheckDockerAllocatedMemory(ctx, docker)
+	clusterConfigFileExist := FileExists(clusterConfigFile)
 	if !clusterConfigFileExist {
 		return nil, fmt.Errorf("the cluster config file %s does not exist", clusterConfigFile)
 	}
