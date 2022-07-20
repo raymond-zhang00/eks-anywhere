@@ -533,6 +533,11 @@ func (f *Factory) WithWriter() *Factory {
 	return f
 }
 
+func (f *Factory) SkipWriter() *Factory {
+	f.dependencies.Writer, _ = filewriter.NoWriter()
+	return f
+}
+
 func (f *Factory) WithKind() *Factory {
 	f.WithExecutableBuilder().WithWriter()
 
