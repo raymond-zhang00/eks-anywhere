@@ -30,6 +30,16 @@ func (u *CreateValidations) PreflightValidations(ctx context.Context) (err error
 			Err:         validations.ValidateK8s123Support(u.Opts.Spec),
 			Silent:      true,
 		},
+		{
+			Name:        "Test Validation 1",
+			Remediation: fmt.Sprintf("Test validation 1 failed"),
+			Err:         testValidation(1),
+		},
+		{
+			Name:        "Test Validation 2",
+			Remediation: fmt.Sprintf("Test validation 1 failed"),
+			Err:         testValidation(1),
+		},
 	}
 
 	if u.Opts.Spec.Cluster.IsManaged() {
@@ -59,4 +69,12 @@ func (u *CreateValidations) PreflightValidations(ctx context.Context) (err error
 	}
 
 	return validations.RunPreflightValidations(createValidations)
+}
+
+func testValidation(x int) error {
+	if x == 0 {
+		return fmt.Errorf("validating registry mirror endpoint: %v", err)
+	}
+
+	return nil
 }
