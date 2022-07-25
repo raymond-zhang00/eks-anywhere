@@ -21,9 +21,9 @@ import (
 	"github.com/aws/eks-anywhere/pkg/features"
 	"github.com/aws/eks-anywhere/pkg/kubeconfig"
 	"github.com/aws/eks-anywhere/pkg/providers/cloudstack/decoder"
+	"github.com/aws/eks-anywhere/pkg/task"
 	"github.com/aws/eks-anywhere/pkg/types"
 	"github.com/aws/eks-anywhere/pkg/validations"
-	"github.com/aws/eks-anywhere/pkg/validations/createvalidations"
 	"github.com/aws/eks-anywhere/pkg/workflows"
 )
 
@@ -166,16 +166,20 @@ func (cc *createClusterOptions) createCluster(cmd *cobra.Command, _ []string) er
 		return fmt.Errorf("provider snow is not supported in this release")
 	}
 
-	createCluster := workflows.NewCreate(
-		deps.Bootstrapper,
-		deps.Provider,
-		deps.ClusterManager,
-		deps.FluxAddonClient,
-		deps.Writer,
-		deps.EksdInstaller,
-		deps.PackageInstaller,
-	)
+	// This now uses pkg/workflows/validate
+	validateCluster := &workflows.CreateValidator{
+		Bootstrapper:     deps.Bootstrapper,
+		Provider:         deps.Provider,
+		ClusterManager:   deps.ClusterManager,
+		AddonManager:     deps.FluxAddonClient,
+		Writer:           deps.Writer,
+		EksdInstaller:    deps.EksdInstaller,
+		PackageInstaller: deps.PackageInstaller,
+		Kubectl:          deps.Kubectl,
+		CliConfig:        *cliConfig,
+	}
 
+	// Specify management cluster config
 	var cluster *types.Cluster
 	if clusterSpec.ManagementCluster == nil {
 		cluster = &types.Cluster{
@@ -189,20 +193,14 @@ func (cc *createClusterOptions) createCluster(cmd *cobra.Command, _ []string) er
 		}
 	}
 
-	validationOpts := &validations.Opts{
-		Kubectl: deps.Kubectl,
-		Spec:    clusterSpec,
-		WorkloadCluster: &types.Cluster{
-			Name:           clusterSpec.Cluster.Name,
-			KubeconfigFile: kubeconfig.FromClusterName(clusterSpec.Cluster.Name),
-		},
-		ManagementCluster: cluster,
-		Provider:          deps.Provider,
-		CliConfig:         cliConfig,
-	}
-	createValidations := createvalidations.New(validationOpts)
+	// Update cluster information
+	validateCluster.Cluster = *cluster
 
-	err = createCluster.Run(ctx, clusterSpec, createValidations, cc.forceClean)
+	commandContext, err := validateCluster.CreateValidations(ctx, clusterSpec, preOpt.forceClean)
+
+	err = task.NewTaskRunner(&workflows.CreateBootStrapClusterTask{}, validateCluster.Writer).RunTask(ctx, commandContext)
+
+	//err = createCluster.Run(ctx, clusterSpec, createValidations, cc.forceClean)
 
 	cleanup(deps, &err)
 	return err

@@ -18,6 +18,7 @@ import (
 )
 
 // Run validation logic
+// Incorporates
 
 type CreateValidator struct {
 	Bootstrapper     interfaces.Bootstrapper
@@ -32,7 +33,7 @@ type CreateValidator struct {
 	CliConfig        config.CliConfig
 }
 
-func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cluster.Spec, forceCleanup bool) error {
+func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cluster.Spec, forceCleanup bool) (*task.CommandContext, error) {
 
 	// Setup validator
 	validationOpts := &validations.Opts{
@@ -54,7 +55,7 @@ func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cl
 		if err := v.Bootstrapper.DeleteBootstrapCluster(ctx, &types.Cluster{
 			Name: clusterSpec.Cluster.Name,
 		}, false); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -83,9 +84,9 @@ func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cl
 	err := runner.Run()
 	if err != nil {
 		commandContext.SetError(err)
-		return nil
+		return nil, err
 	}
-	return nil
+	return commandContext, err
 
 }
 

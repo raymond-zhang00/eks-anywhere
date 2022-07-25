@@ -160,7 +160,7 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 		}
 	} else {
 		cluster = &types.Cluster{
-			Name:           clusterSpec.Cluster.Name,
+			Name:           clusterSpec.ManagementCluster.Name,
 			KubeconfigFile: clusterSpec.ManagementCluster.KubeconfigFile,
 		}
 	}
@@ -169,7 +169,7 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 	validateCluster.Cluster = *cluster
 
 	// Runs Validations
-	err = validateCluster.CreateValidations(ctx, clusterSpec, preOpt.forceClean)
+	_, err = validateCluster.CreateValidations(ctx, clusterSpec, preOpt.forceClean)
 	//err = createCluster.Run(ctx, clusterSpec, createValidations, preOpt.forceClean)
 
 	cleanup(deps, &err)
