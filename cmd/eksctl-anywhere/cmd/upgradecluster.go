@@ -172,7 +172,7 @@ func (uc *upgradeClusterOptions) upgradeCluster(cmd *cobra.Command) error {
 }
 
 func (uc *upgradeClusterOptions) commonValidations(ctx context.Context) (cluster *v1alpha1.Cluster, err error) {
-	clusterConfig, err := commonValidation(ctx, uc.fileName)
+	clusterConfig, err := workflows.CommonValidation(ctx, uc.fileName)
 	if err != nil {
 		return nil, err
 	}

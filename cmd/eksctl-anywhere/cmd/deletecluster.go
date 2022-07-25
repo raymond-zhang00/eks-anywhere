@@ -76,7 +76,7 @@ func (dc *deleteClusterOptions) validate(ctx context.Context, args []string) err
 		}
 		dc.fileName = filename
 	}
-	clusterConfig, err := commonValidation(ctx, dc.fileName)
+	clusterConfig, err := workflows.CommonValidation(ctx, dc.fileName)
 	if err != nil {
 		return err
 	}

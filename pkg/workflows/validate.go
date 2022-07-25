@@ -1,4 +1,4 @@
-package cmd
+package workflows
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/aws/eks-anywhere/pkg/validations"
 )
 
-func commonValidation(ctx context.Context, clusterConfigFile string) (*v1alpha1.Cluster, error) {
+func CommonValidation(ctx context.Context, clusterConfigFile string) (*v1alpha1.Cluster, error) {
 	docker := executables.BuildDockerExecutable()
 	err := validations.CheckMinimumDockerVersion(ctx, docker)
 	if err != nil {

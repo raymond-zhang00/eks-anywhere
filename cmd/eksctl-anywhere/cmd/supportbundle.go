@@ -16,6 +16,7 @@ import (
 	"github.com/aws/eks-anywhere/pkg/kubeconfig"
 	"github.com/aws/eks-anywhere/pkg/validations"
 	"github.com/aws/eks-anywhere/pkg/version"
+	"github.com/aws/eks-anywhere/pkg/workflows"
 )
 
 type createSupportBundleOptions struct {
@@ -61,7 +62,7 @@ func init() {
 }
 
 func (csbo *createSupportBundleOptions) validate(ctx context.Context) error {
-	clusterConfig, err := commonValidation(ctx, csbo.fileName)
+	clusterConfig, err := workflows.CommonValidation(ctx, csbo.fileName)
 	if err != nil {
 		return err
 	}
