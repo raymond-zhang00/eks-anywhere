@@ -17,9 +17,7 @@ import (
 	"github.com/aws/eks-anywhere/pkg/workflows/interfaces"
 )
 
-// Run validation logic
-// Incorporates
-
+// This should work for upgrade as well
 type CreateValidator struct {
 	Bootstrapper     interfaces.Bootstrapper
 	Provider         providers.Provider
@@ -35,7 +33,9 @@ type CreateValidator struct {
 
 func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cluster.Spec, forceCleanup bool) (*task.CommandContext, error) {
 
-	// Setup validator
+	// Setup create validation options
+	// This will be used by create cluster and validate create
+	// This could be bundled seperately if we want to group it with its run
 	validationOpts := &validations.Opts{
 		Kubectl: v.Kubectl,
 		Spec:    clusterSpec,
@@ -59,6 +59,7 @@ func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cl
 		}
 	}
 
+	// This is what is what everything else depends on
 	commandContext := &task.CommandContext{
 		Bootstrapper:     v.Bootstrapper,
 		Provider:         v.Provider,
@@ -75,6 +76,8 @@ func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cl
 		commandContext.BootstrapCluster = clusterSpec.ManagementCluster
 	}
 
+	// Actual validations, this can be broken out a bit and run
+	// Maybe this should be broken into a separate func independent of commandContext?
 	logger.Info("Performing validate task using the validate workflow")
 	runner := validations.NewRunner()
 	runner.Register(v.providerValidation(ctx, commandContext)...)
@@ -86,6 +89,8 @@ func (v *CreateValidator) CreateValidations(ctx context.Context, clusterSpec *cl
 		commandContext.SetError(err)
 		return nil, err
 	}
+
+	// Returns command context for other create tasks to keep running
 	return commandContext, err
 
 }
