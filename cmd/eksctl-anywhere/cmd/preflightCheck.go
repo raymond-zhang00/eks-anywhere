@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -18,16 +17,11 @@ import (
 	"github.com/aws/eks-anywhere/pkg/constants"
 	"github.com/aws/eks-anywhere/pkg/dependencies"
 	"github.com/aws/eks-anywhere/pkg/features"
-	"github.com/aws/eks-anywhere/pkg/filewriter"
 	"github.com/aws/eks-anywhere/pkg/kubeconfig"
-	"github.com/aws/eks-anywhere/pkg/logger"
-	"github.com/aws/eks-anywhere/pkg/providers"
 	"github.com/aws/eks-anywhere/pkg/providers/cloudstack/decoder"
-	"github.com/aws/eks-anywhere/pkg/task"
 	"github.com/aws/eks-anywhere/pkg/types"
 	"github.com/aws/eks-anywhere/pkg/validations"
-	"github.com/aws/eks-anywhere/pkg/validations/createvalidations"
-	"github.com/aws/eks-anywhere/pkg/workflows/interfaces"
+	"github.com/aws/eks-anywhere/pkg/workflows"
 )
 
 type preflightOptions struct {
@@ -37,16 +31,6 @@ type preflightOptions struct {
 	hardwareCSVPath       string
 	tinkerbellBootstrapIP string
 	installPackages       string
-}
-
-type Validate struct {
-	bootstrapper     interfaces.Bootstrapper
-	provider         providers.Provider
-	clusterManager   interfaces.ClusterManager
-	addonManager     interfaces.AddonManager
-	writer           filewriter.FileWriter
-	eksdInstaller    interfaces.EksdInstaller
-	packageInstaller interfaces.PackageInstaller
 }
 
 var preOpt = &preflightOptions{}
@@ -97,18 +81,10 @@ func preRunPreflight(cmd *cobra.Command, args []string) error {
 func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
-	logger.V(0).Info("Beginning preflight validations")
+	// Packaged initial validations and cluster config
+	clusterConfig, err := validations.CommonValidation(ctx, preOpt.fileName)
 
-	clusterConfigFileExist := validations.FileExists(preOpt.fileName)
-	if !clusterConfigFileExist {
-		return fmt.Errorf("the cluster config file %s does not exist", preOpt.fileName)
-	}
-
-	clusterConfig, err := v1alpha1.GetAndValidateClusterConfig(preOpt.fileName)
-	if err != nil {
-		return fmt.Errorf("the cluster config file provided is invalid: %v", err)
-	}
-
+	// Directly calls validations for path
 	kubeconfigPath := kubeconfig.FromClusterName(clusterConfig.Name)
 	if validations.FileExistsAndIsNotEmpty(kubeconfigPath) {
 		return fmt.Errorf(
@@ -118,6 +94,7 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 	}
 
 	// Generates spec from cluster from options
+	// Performs cluster validations
 	clusterSpec, err := newClusterSpec(preOpt.clusterOptions)
 	if err != nil {
 		return err
@@ -142,7 +119,6 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 		WithWriter().
 		WithEksdInstaller().
 		WithPackageInstaller(clusterSpec, preOpt.installPackages).
-		//SkipWriter(). // Added to skip file writing process for docker provider - will not work with vSphere
 		Build(ctx)
 	if err != nil {
 		return err
@@ -151,6 +127,7 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 
 	// Check currently supported providers - maybe this should be broken out into something separate
 	// so that preflight and create cluster have a single source?
+	// Could be added to provider
 	if !features.IsActive(features.CloudStackProvider()) && deps.Provider.Name() == constants.CloudStackProviderName {
 		return fmt.Errorf("provider cloudstack is not supported in this release")
 	}
@@ -160,14 +137,18 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 	}
 
 	// Create cluster - Define structure locally insted of using create.go
-	createCluster := &Validate{
-		bootstrapper:     deps.Bootstrapper,
-		provider:         deps.Provider,
-		clusterManager:   deps.ClusterManager,
-		addonManager:     deps.FluxAddonClient,
-		writer:           deps.Writer,
-		eksdInstaller:    deps.EksdInstaller,
-		packageInstaller: deps.PackageInstaller,
+
+	// This now uses pkg/workflows/validate
+	validateCluster := &workflows.CreateValidator{
+		Bootstrapper:     deps.Bootstrapper,
+		Provider:         deps.Provider,
+		ClusterManager:   deps.ClusterManager,
+		AddonManager:     deps.FluxAddonClient,
+		Writer:           deps.Writer,
+		EksdInstaller:    deps.EksdInstaller,
+		PackageInstaller: deps.PackageInstaller,
+		Kubectl:          deps.Kubectl,
+		CliConfig:        *cliConfig,
 	}
 
 	// Specify management cluster config
@@ -184,23 +165,12 @@ func (preOpt *preflightOptions) preflight(cmd *cobra.Command, _ []string) error 
 		}
 	}
 
-	// Set Validation Options
-	validationOpts := &validations.Opts{
-		Kubectl: deps.Kubectl,
-		Spec:    clusterSpec,
-		WorkloadCluster: &types.Cluster{
-			Name:           clusterSpec.Cluster.Name,
-			KubeconfigFile: kubeconfig.FromClusterName(clusterSpec.Cluster.Name),
-		},
-		ManagementCluster: cluster,
-		Provider:          deps.Provider,
-		CliConfig:         cliConfig,
-	}
-
-	createValidations := createvalidations.New(validationOpts)
+	// Update cluster information
+	validateCluster.Cluster = *cluster
 
 	// Runs Validations
-	err = createCluster.Run(ctx, clusterSpec, createValidations, preOpt.forceClean)
+	err = validateCluster.CreateValidations(ctx, clusterSpec, preOpt.forceClean)
+	//err = createCluster.Run(ctx, clusterSpec, createValidations, preOpt.forceClean)
 
 	cleanup(deps, &err)
 	return err
@@ -230,92 +200,4 @@ func (preOpt *preflightOptions) directoriesToMount(clusterSpec *cluster.Spec, cl
 	}
 
 	return dirs, nil
-}
-
-// Logic below is all modified from cmd/create Run and SetAndValidateTask
-// Define run function
-func (v *Validate) Run(ctx context.Context, clusterSpec *cluster.Spec, validator interfaces.Validator, forceCleanup bool) error {
-	if forceCleanup {
-		if err := v.bootstrapper.DeleteBootstrapCluster(ctx, &types.Cluster{
-			Name: clusterSpec.Cluster.Name,
-		}, false); err != nil {
-			return err
-		}
-	}
-	commandContext := &task.CommandContext{
-		Bootstrapper:     v.bootstrapper,
-		Provider:         v.provider,
-		ClusterManager:   v.clusterManager,
-		AddonManager:     v.addonManager,
-		ClusterSpec:      clusterSpec,
-		Writer:           v.writer,
-		Validations:      validator,
-		EksdInstaller:    v.eksdInstaller,
-		PackageInstaller: v.packageInstaller,
-	}
-
-	if clusterSpec.ManagementCluster != nil {
-		commandContext.BootstrapCluster = clusterSpec.ManagementCluster
-	}
-
-	err := task.NewTaskRunner(&ValidateTask{}, v.writer).RunTask(ctx, commandContext)
-
-	return err
-}
-
-type ValidateTask struct{}
-
-// This is the actual task called for validation - passed into run function
-func (v *ValidateTask) Run(ctx context.Context, commandContext *task.CommandContext) task.Task {
-	logger.Info("Performing validate task")
-	runner := validations.NewRunner()
-	runner.Register(v.providerValidation(ctx, commandContext)...)
-	runner.Register(commandContext.AddonManager.Validations(ctx, commandContext.ClusterSpec)...)
-	runner.Register(v.validations(ctx, commandContext)...)
-
-	//runner.PrintValidations()
-
-	err := runner.Run()
-	if err != nil {
-		commandContext.SetError(err)
-		return nil
-	}
-	return nil
-}
-
-// Preflight Validation
-func (v *ValidateTask) validations(ctx context.Context, commandContext *task.CommandContext) []validations.Validation {
-	return []validations.Validation{
-		func() *validations.ValidationResult {
-			return &validations.ValidationResult{
-				Name: "create preflight validations pass",
-				Err:  commandContext.Validations.PreflightValidations(ctx),
-			}
-		},
-	}
-}
-
-// Provider Validation
-func (v *ValidateTask) providerValidation(ctx context.Context, commandContext *task.CommandContext) []validations.Validation {
-	return []validations.Validation{
-		func() *validations.ValidationResult {
-			return &validations.ValidationResult{
-				Name: fmt.Sprintf("%s Provider setup is valid", commandContext.Provider.Name()),
-				Err:  commandContext.Provider.SetupAndValidateCreateCluster(ctx, commandContext.ClusterSpec),
-			}
-		},
-	}
-}
-
-// Additional required methods on Validate Task, called by runner
-func (v *ValidateTask) Name() string {
-	return "preflight-validate"
-}
-
-func (v *ValidateTask) Restore(ctx context.Context, commandContext *task.CommandContext, completedTask *task.CompletedTask) (task.Task, error) {
-	return nil, nil
-}
-
-func (v *ValidateTask) Checkpoint() *task.CompletedTask {
-	return nil
 }

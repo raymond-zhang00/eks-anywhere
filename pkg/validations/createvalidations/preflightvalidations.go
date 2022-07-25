@@ -73,7 +73,7 @@ func (u *CreateValidations) PreflightValidations(ctx context.Context) (err error
 
 func testValidation(x int) error {
 	if x == 0 {
-		return fmt.Errorf("validating registry mirror endpoint: %v", err)
+		return fmt.Errorf("test validation failed")
 	}
 
 	return nil
