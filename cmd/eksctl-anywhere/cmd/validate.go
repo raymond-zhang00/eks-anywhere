@@ -1,13 +1,36 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
+	"github.com/aws/eks-anywhere/pkg/api/v1alpha1"
+	"github.com/aws/eks-anywhere/pkg/cluster"
+	"github.com/aws/eks-anywhere/pkg/config"
+	"github.com/aws/eks-anywhere/pkg/constants"
+	"github.com/aws/eks-anywhere/pkg/dependencies"
+	"github.com/aws/eks-anywhere/pkg/features"
+	"github.com/aws/eks-anywhere/pkg/kubeconfig"
+	"github.com/aws/eks-anywhere/pkg/providers/cloudstack/decoder"
+	"github.com/aws/eks-anywhere/pkg/types"
+	"github.com/aws/eks-anywhere/pkg/validations"
+	"github.com/aws/eks-anywhere/pkg/validations/createvalidations"
+	"github.com/aws/eks-anywhere/pkg/workflows"
 )
 
 type validateOptions struct {
 	clusterOptions
+	forceClean            bool
+	skipIpCheck           bool
+	hardwareCSVPath       string
+	tinkerbellBootstrapIP string
+	installPackages       string
 }
 
 var valOpt = &validateOptions{}
@@ -29,5 +52,124 @@ func init() {
 }
 
 func (valOpt *validateOptions) validateCluster(cmd *cobra.Command, _ []string) error {
+	ctx := cmd.Context()
 
+	clusterConfig, err := workflows.CommonValidation(ctx, valOpt.fileName)
+	if err != nil {
+		return err
+	}
+
+	if clusterConfig.Spec.DatacenterRef.Kind == v1alpha1.TinkerbellDatacenterKind {
+		flag := cmd.Flags().Lookup(TinkerbellHardwareCSVFlagName)
+
+		// If no flag was returned there is a developer error as the flag has been removed
+		// from the program rendering it invalid.
+		if flag == nil {
+			panic("'hardwarefile' flag not configured")
+		}
+
+		if !viper.IsSet(TinkerbellHardwareCSVFlagName) || viper.GetString(TinkerbellHardwareCSVFlagName) == "" {
+			return fmt.Errorf("required flag \"%v\" not set", TinkerbellHardwareCSVFlagName)
+		}
+
+		if !validations.FileExists(valOpt.hardwareCSVPath) {
+			return fmt.Errorf("hardware config file %s does not exist", valOpt.hardwareCSVPath)
+		}
+	}
+
+	kubeconfigPath := kubeconfig.FromClusterName(clusterConfig.Name)
+	if validations.FileExistsAndIsNotEmpty(kubeconfigPath) {
+		return fmt.Errorf(
+			"old cluster config file exists under %s, please use a different clusterName to proceed",
+			clusterConfig.Name,
+		)
+	}
+
+	clusterSpec, err := newClusterSpec(valOpt.clusterOptions)
+	if err != nil {
+		return err
+	}
+
+	cliConfig := buildCliConfig(clusterSpec)
+	dirs, err := valOpt.directoriesToMount(clusterSpec, cliConfig)
+	if err != nil {
+		return err
+	}
+
+	deps, err := dependencies.ForSpec(ctx, clusterSpec).WithExecutableMountDirs(dirs...).
+		WithCliConfig(cliConfig).
+		WithProvider(valOpt.fileName, clusterSpec.Cluster, valOpt.skipIpCheck, valOpt.hardwareCSVPath, valOpt.forceClean, valOpt.tinkerbellBootstrapIP).
+		WithFluxAddonClient(clusterSpec.Cluster, clusterSpec.FluxConfig, cliConfig).
+		Build(ctx)
+	if err != nil {
+		return err
+	}
+	defer close(ctx, deps)
+
+	if !features.IsActive(features.CloudStackProvider()) && deps.Provider.Name() == constants.CloudStackProviderName {
+		return fmt.Errorf("provider cloudstack is not supported in this release")
+	}
+
+	if !features.IsActive(features.SnowProvider()) && deps.Provider.Name() == constants.SnowProviderName {
+		return fmt.Errorf("provider snow is not supported in this release")
+	}
+
+	var cluster *types.Cluster
+	if clusterSpec.ManagementCluster == nil {
+		cluster = &types.Cluster{
+			Name:           clusterSpec.Cluster.Name,
+			KubeconfigFile: kubeconfig.FromClusterName(clusterSpec.Cluster.Name),
+		}
+	} else {
+		cluster = &types.Cluster{
+			Name:           clusterSpec.ManagementCluster.Name,
+			KubeconfigFile: clusterSpec.ManagementCluster.KubeconfigFile,
+		}
+	}
+
+	validationOpts := &validations.Opts{
+		Kubectl: deps.Kubectl,
+		Spec:    clusterSpec,
+		WorkloadCluster: &types.Cluster{
+			Name:           clusterSpec.Cluster.Name,
+			KubeconfigFile: kubeconfig.FromClusterName(clusterSpec.Cluster.Name),
+		},
+		ManagementCluster: cluster,
+		Provider:          deps.Provider,
+		CliConfig:         cliConfig,
+	}
+
+	createValidations := createvalidations.New(validationOpts)
+
+	createValidator := workflows.NewValidate(deps.Provider, deps.FluxAddonClient, createValidations)
+
+	err = createValidator.Run(ctx, clusterSpec)
+
+	cleanup(deps, &err)
+	return err
+}
+
+func (valOpt *validateOptions) directoriesToMount(clusterSpec *cluster.Spec, cliConfig *config.CliConfig) ([]string, error) {
+	dirs := valOpt.mountDirs()
+	fluxConfig := clusterSpec.FluxConfig
+	if fluxConfig != nil && fluxConfig.Spec.Git != nil {
+		dirs = append(dirs, filepath.Dir(cliConfig.GitPrivateKeyFile))
+		dirs = append(dirs, filepath.Dir(cliConfig.GitKnownHostsFile))
+		dirs = append(dirs, filepath.Dir(valOpt.installPackages))
+	}
+
+	if clusterSpec.Config.Cluster.Spec.DatacenterRef.Kind == v1alpha1.CloudStackDatacenterKind {
+		env, found := os.LookupEnv(decoder.EksaCloudStackHostPathToMount)
+		if found && len(env) > 0 {
+			mountDirs := strings.Split(env, ",")
+			for _, dir := range mountDirs {
+				if _, err := os.Stat(dir); err != nil {
+					return nil, fmt.Errorf("invalid host path to mount: %v", err)
+				}
+				dirs = append(dirs, dir)
+			}
+		}
+	}
+
+	return dirs, nil
 }
