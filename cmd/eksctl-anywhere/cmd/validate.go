@@ -59,6 +59,7 @@ func (valOpt *validateOptions) validateCluster(cmd *cobra.Command, _ []string) e
 		return err
 	}
 
+	// This can be bundled together as a validation
 	if clusterConfig.Spec.DatacenterRef.Kind == v1alpha1.TinkerbellDatacenterKind {
 		flag := cmd.Flags().Lookup(TinkerbellHardwareCSVFlagName)
 
@@ -114,6 +115,7 @@ func (valOpt *validateOptions) validateCluster(cmd *cobra.Command, _ []string) e
 	}
 	defer close(ctx, deps)
 
+	// Can this be bundled up via a map of map[provider.name] = feature(interface)
 	if !features.IsActive(features.CloudStackProvider()) && deps.Provider.Name() == constants.CloudStackProviderName {
 		return fmt.Errorf("provider cloudstack is not supported in this release")
 	}
@@ -157,6 +159,7 @@ func (valOpt *validateOptions) validateCluster(cmd *cobra.Command, _ []string) e
 	return err
 }
 
+// Creates validations but I don't think they're run until later
 func (valOpt *validateOptions) directoriesToMount(clusterSpec *cluster.Spec, cliConfig *config.CliConfig) ([]string, error) {
 	dirs := valOpt.mountDirs()
 	fluxConfig := clusterSpec.FluxConfig
@@ -183,6 +186,7 @@ func (valOpt *validateOptions) directoriesToMount(clusterSpec *cluster.Spec, cli
 }
 
 // Define cluster spec validation
+// Could add the validations individually into a single func
 func clusterSpecValidation(c *cluster.Spec) []validations.Validation {
 
 	manager, _ := cluster.NewDefaultConfigManager()
@@ -190,7 +194,23 @@ func clusterSpecValidation(c *cluster.Spec) []validations.Validation {
 	return []validations.Validation{
 		func() *validations.ValidationResult {
 			return &validations.ValidationResult{
-				Name: fmt.Sprintf("Cluster spec is valid"),
+				Name: "Cluster spec is valid",
+				Err:  manager.Validate(c.Config),
+			}
+		},
+	}
+}
+
+// Define cluster spec validation
+// Could add the validations individually into a single func
+func Validation(c *cluster.Spec) []validations.Validation {
+
+	manager, _ := cluster.NewDefaultConfigManager()
+
+	return []validations.Validation{
+		func() *validations.ValidationResult {
+			return &validations.ValidationResult{
+				Name: "Cluster spec is valid",
 				Err:  manager.Validate(c.Config),
 			}
 		},
