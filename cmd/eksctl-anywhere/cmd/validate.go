@@ -90,6 +90,14 @@ func (valOpt *validateOptions) validateCluster(cmd *cobra.Command, _ []string) e
 		return err
 	}
 
+	// Run cluster spec validation
+	clusterSpecRunner := validations.NewRunner()
+	clusterSpecRunner.Register(clusterSpecValidation(clusterSpec)...)
+	err = clusterSpecRunner.Run()
+	if err != nil {
+		return err
+	}
+
 	cliConfig := buildCliConfig(clusterSpec)
 	dirs, err := valOpt.directoriesToMount(clusterSpec, cliConfig)
 	if err != nil {
@@ -172,4 +180,19 @@ func (valOpt *validateOptions) directoriesToMount(clusterSpec *cluster.Spec, cli
 	}
 
 	return dirs, nil
+}
+
+// Define cluster spec validation
+func clusterSpecValidation(c *cluster.Spec) []validations.Validation {
+
+	manager, _ := cluster.NewDefaultConfigManager()
+
+	return []validations.Validation{
+		func() *validations.ValidationResult {
+			return &validations.ValidationResult{
+				Name: fmt.Sprintf("Cluster spec is valid"),
+				Err:  manager.Validate(c.Config),
+			}
+		},
+	}
 }
