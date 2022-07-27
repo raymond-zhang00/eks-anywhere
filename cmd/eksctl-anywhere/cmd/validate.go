@@ -59,6 +59,14 @@ func (valOpt *validateOptions) validateCluster(cmd *cobra.Command, _ []string) e
 		return err
 	}
 
+	// Run cluster config validation
+	clusterConfigRunner := validations.NewRunner()
+	clusterConfigRunner.Register(clusterConfigValidation(valOpt.fileName)...)
+	err = clusterConfigRunner.Run()
+	if err != nil {
+		return err
+	}
+
 	// This can be bundled together as a validation
 	if clusterConfig.Spec.DatacenterRef.Kind == v1alpha1.TinkerbellDatacenterKind {
 		flag := cmd.Flags().Lookup(TinkerbellHardwareCSVFlagName)
@@ -84,6 +92,14 @@ func (valOpt *validateOptions) validateCluster(cmd *cobra.Command, _ []string) e
 			"old cluster config file exists under %s, please use a different clusterName to proceed",
 			clusterConfig.Name,
 		)
+	}
+
+	// Run kubeconfig validation
+	kubeconfigRunner := validations.NewRunner()
+	kubeconfigRunner.Register(kubeconfigValidation(clusterConfig.Name)...)
+	err = kubeconfigRunner.Run()
+	if err != nil {
+		return err
 	}
 
 	clusterSpec, err := newClusterSpec(valOpt.clusterOptions)
@@ -185,6 +201,22 @@ func (valOpt *validateOptions) directoriesToMount(clusterSpec *cluster.Spec, cli
 	return dirs, nil
 }
 
+// Define cluster config validation
+func clusterConfigValidation(clusterfile string) []validations.Validation {
+
+	// This will need to be better organized
+	clusterConfig, _ := v1alpha1.GetClusterConfig(clusterfile)
+
+	return []validations.Validation{
+		func() *validations.ValidationResult {
+			return &validations.ValidationResult{
+				Name: "Cluster config is valid",
+				Err:  v1alpha1.ValidateClusterConfigContent(clusterConfig),
+			}
+		},
+	}
+}
+
 // Define cluster spec validation
 // Could add the validations individually into a single func
 func clusterSpecValidation(c *cluster.Spec) []validations.Validation {
@@ -201,18 +233,25 @@ func clusterSpecValidation(c *cluster.Spec) []validations.Validation {
 	}
 }
 
-// Define cluster spec validation
-// Could add the validations individually into a single func
-func Validation(c *cluster.Spec) []validations.Validation {
-
-	manager, _ := cluster.NewDefaultConfigManager()
-
+// Kubeconfig validation
+func kubeconfigValidation(clusterName string) []validations.Validation {
 	return []validations.Validation{
 		func() *validations.ValidationResult {
 			return &validations.ValidationResult{
-				Name: "Cluster spec is valid",
-				Err:  manager.Validate(c.Config),
+				Name: "No conflicting cluster config file",
+				Err:  kubeconfigCheck(clusterName),
 			}
 		},
 	}
+}
+
+func kubeconfigCheck(clusterName string) error {
+	kubeconfigPath := kubeconfig.FromClusterName(clusterName)
+	if validations.FileExistsAndIsNotEmpty(kubeconfigPath) {
+		return fmt.Errorf(
+			"old cluster config file exists under %s, please use a different clusterName to proceed",
+			clusterName,
+		)
+	}
+	return nil
 }
