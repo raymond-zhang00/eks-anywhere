@@ -1,9 +1,11 @@
 skipped_tests:
 # CloudStack
 - TestCloudStackKubernetes121RedhatProxyConfig
-- TestCloudStackKubernetes121RedhatRegistryMirrorAndCert
 - TestCloudStackKubernetes122ThreeWorkersConformanceFlow
 - TestCloudStackKubernetes123ThreeWorkersConformanceFlow
+# CloudStack Registry Mirror endpoint was not set up
+- TestCloudStackKubernetes121RedhatRegistryMirrorAndCert
+- TestCloudStackKubernetes121UbuntuAirgappedRegistryMirror
 # Unskip these after 1.22 and 1.23 CloudStack images are available in CI env
 - TestCloudStackKubernetes123GitopsOptionsFluxLegacy
 - TestCloudStackKubernetes123SimpleFlow
@@ -23,6 +25,17 @@ skipped_tests:
 - TestNutanixKubernetes122UbuntuWorkerNodeScaleDown5To2
 - TestNutanixKubernetes122UbuntuWorkerNodeScaleUp1To3
 - TestNutanixKubernetes122UbuntuWorkerNodeScaleUp2To5
+- TestNutanixKubernetes125To126UbuntuUpgrade
+- TestNutanixKubernetes126CuratedPackagesClusterAutoscalerUbuntuSimpleFlow
+- TestNutanixKubernetes126CuratedPackagesEmissarySimpleFlow
+- TestNutanixKubernetes126CuratedPackagesSimpleFlow
+- TestNutanixKubernetes126OIDC
+- TestNutanixKubernetes126SimpleFlowWithName
+- TestNutanixKubernetes126SimpleFlowWithUUID
+- TestNutanixKubernetes126UbuntuControlPlaneNodeScaleDown3To1
+- TestNutanixKubernetes126UbuntuControlPlaneNodeScaleUp1To3
+- TestNutanixKubernetes126UbuntuWorkerNodeScaleDown3To1
+- TestNutanixKubernetes126UbuntuWorkerNodeScaleUp1To3
 # Snow
 - TestSnowKubernetes125UbuntuAWSIamAuth
 - TestSnowKubernetes124To125AWSIamAuthUpgrade
