@@ -532,9 +532,9 @@ func OmitTinkerbellCPMachineTemplate(cp *ControlPlane) {
 
 // OmitTinkerbellWorkersMachineTemplate omits workers machine template on scale update.
 func OmitTinkerbellWorkersMachineTemplate(w *Workers) {
-	wg := w.Groups
-	for _, w := range wg {
-		w.ProviderMachineTemplate = nil
+	wgs := w.Groups
+	for i := range wgs {
+		w.Groups[i].ProviderMachineTemplate = nil
 	}
 }
 
