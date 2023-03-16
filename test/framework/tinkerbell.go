@@ -75,6 +75,11 @@ func UpdateTinkerbellUbuntuTemplate125Var() api.TinkerbellFiller {
 	return api.WithStringFromEnvVarTinkerbell(tinkerbellImageUbuntu125EnvVar, api.WithTinkerbellOSImageURL)
 }
 
+// UpdateTinkerbellMachinesSSHAuthorizedKey updates all tinkerbell machines SSHAuthorizedKey.
+func UpdateTinkerbellMachinesSSHAuthorizedKey() api.TinkerbellFiller {
+	return api.WithStringFromEnvVarTinkerbell(tinkerbellSSHAuthorizedKey, api.WithSSHAuthorizedKeyForAllTinkerbellMachines)
+}
+
 func NewTinkerbell(t *testing.T, opts ...TinkerbellOpt) *Tinkerbell {
 	checkRequiredEnvVars(t, requiredTinkerbellEnvVars)
 	cidr := os.Getenv(tinkerbellControlPlaneNetworkCidrEnvVar)

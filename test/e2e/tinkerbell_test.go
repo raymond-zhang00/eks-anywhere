@@ -1002,7 +1002,8 @@ func TestTinkerbellKubernetes125UbuntuMulticlusterWorkerNodeScaleUpAPI(t *testin
 		provider,
 		framework.WithClusterFiller(api.WithKubernetesVersion(v1alpha1.Kube125)),
 		framework.WithControlPlaneHardware(2),
-		framework.WithWorkerHardware(2),
+		framework.WithWorkerHardware(1),
+		framework.WithCustomLabelHardware(1, nodeGroupLabel1),
 	)
 	test := framework.NewMulticlusterE2ETest(
 		t,
@@ -1028,7 +1029,10 @@ func TestTinkerbellKubernetes125UbuntuMulticlusterWorkerNodeScaleUpAPI(t *testin
 				api.WithMachineGroupRef(nodeGroupLabel1, "TinkerbellMachineConfig"),
 			),
 		),
-		api.TinkerbellToConfigFiller(api.WithCustomTinkerbellMachineConfig(nodeGroupLabel1)),
+		api.TinkerbellToConfigFiller(
+			api.WithCustomTinkerbellMachineConfig(nodeGroupLabel1),
+			framework.UpdateTinkerbellMachinesSSHAuthorizedKey(),
+		),
 	)
 }
 
