@@ -80,6 +80,11 @@ func UpdateTinkerbellMachinesSSHAuthorizedKey() api.TinkerbellFiller {
 	return api.WithStringFromEnvVarTinkerbell(tinkerbellSSHAuthorizedKey, api.WithSSHAuthorizedKeyForAllTinkerbellMachines)
 }
 
+// UpdateTinkerbellMachinesOsFamily updates all tinkerbell machines OsFamily.
+func UpdateTinkerbellMachinesOsFamily() api.TinkerbellFiller {
+	return api.WithOsFamilyForAllTinkerbellMachines(anywherev1.Ubuntu)
+}
+
 func NewTinkerbell(t *testing.T, opts ...TinkerbellOpt) *Tinkerbell {
 	checkRequiredEnvVars(t, requiredTinkerbellEnvVars)
 	cidr := os.Getenv(tinkerbellControlPlaneNetworkCidrEnvVar)

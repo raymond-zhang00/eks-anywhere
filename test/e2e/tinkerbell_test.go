@@ -1032,6 +1032,7 @@ func TestTinkerbellKubernetes125UbuntuMulticlusterWorkerNodeScaleUpAPI(t *testin
 		api.TinkerbellToConfigFiller(
 			api.WithCustomTinkerbellMachineConfig(nodeGroupLabel1),
 			framework.UpdateTinkerbellMachinesSSHAuthorizedKey(),
+			framework.UpdateTinkerbellMachinesOsFamily(),
 		),
 	)
 }
