@@ -64,25 +64,6 @@ func runWorkloadClusterUpgradeFlowAPI(test *framework.MulticlusterE2ETest, fille
 	test.DeleteManagementCluster()
 }
 
-func runWorkloadClusterUpgradeFlowAPIForBareMetal(test *framework.MulticlusterE2ETest, filler ...api.ClusterConfigFiller) {
-	test.CreateManagementCluster()
-	test.RunInWorkloadClusters(func(wc *framework.WorkloadCluster) {
-		wc.GenerateClusterConfig()
-		wc.WaitForAvailableHardware()
-		wc.PowerOffHardware()
-		wc.ApplyClusterManifest()
-		wc.WaitForKubeconfig()
-		wc.ValidateClusterState()
-		wc.UpdateClusterConfig(filler...)
-		wc.ApplyClusterManifest()
-		wc.ValidateClusterState()
-		wc.DeleteClusterWithKubectl()
-		wc.ValidateClusterDelete()
-	})
-	test.ManagementCluster.StopIfFailed()
-	test.DeleteManagementCluster()
-}
-
 func runWorkloadClusterUpgradeFlowAPIWithFlux(test *framework.MulticlusterE2ETest, filler ...api.ClusterConfigFiller) {
 	test.CreateManagementCluster()
 	test.RunConcurrentlyInWorkloadClusters(func(wc *framework.WorkloadCluster) {
