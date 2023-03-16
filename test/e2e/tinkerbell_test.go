@@ -995,6 +995,46 @@ func TestTinkerbellKubernetes124UbuntuTo125Upgrade(t *testing.T) {
 	)
 }
 
+func TestTinkerbellKubernetes125UbuntuMulticlusterWorkerNodeScaleUpAPI(t *testing.T) {
+	provider := framework.NewTinkerbell(t, framework.WithUbuntu125Tinkerbell())
+	managementCluster := framework.NewClusterE2ETest(
+		t,
+		provider,
+		framework.WithClusterFiller(
+			api.WithKubernetesVersion(v1alpha1.Kube125),
+			api.WithEtcdCountIfExternal(0),
+		),
+		framework.WithControlPlaneHardware(2),
+		framework.WithWorkerHardware(2),
+	)
+	test := framework.NewMulticlusterE2ETest(
+		t,
+		managementCluster,
+	)
+	test.WithWorkloadClusters(
+		framework.NewClusterE2ETest(
+			t,
+			provider,
+			framework.WithClusterName(test.NewWorkloadClusterName()),
+			framework.WithClusterFiller(
+				api.WithKubernetesVersion(v1alpha1.Kube124),
+				api.WithManagementCluster(managementCluster.ClusterName),
+				api.WithEtcdCountIfExternal(0),
+				api.RemoveAllWorkerNodeGroups(),
+			),
+		),
+	)
+	runWorkloadClusterUpgradeFlowAPIForBareMetal(test,
+		api.ClusterToConfigFiller(
+			api.WithWorkerNodeGroup("worker-0",
+				api.WithCount(1),
+				api.WithMachineGroupRef(nodeGroupLabel1, "TinkerbellMachineConfig"),
+			),
+		),
+		api.TinkerbellToConfigFiller(api.WithCustomTinkerbellMachineConfig(nodeGroupLabel1)),
+	)
+}
+
 // Worker nodegroup taints and labels
 func TestTinkerbellKubernetes125UbuntuWorkerNodeGroupsTaintsAndLabels(t *testing.T) {
 	test := framework.NewClusterE2ETest(
