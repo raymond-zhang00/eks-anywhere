@@ -101,7 +101,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, log logr.Logger, cluster *an
 		r.ValidateClusterSpec,
 		r.GenerateSpec,
 		r.ValidateHardware,
-		r.OmitMachineTemplate,
 		r.ValidateDatacenterConfig,
 		r.ValidateRufioMachines,
 		r.CleanupStatusAfterValidate,
@@ -157,6 +156,20 @@ func (r *Reconciler) GenerateSpec(ctx context.Context, log logr.Logger, tinkerbe
 	}
 	tinkerbellScope.Workers = w
 
+	o, err := r.DetectOperation(ctx, log, tinkerbellScope)
+	if err != nil {
+		return controller.Result{}, err
+	}
+
+	if o == K8sVersionUpgradeOperation || o == NewClusterOperation {
+		return controller.Result{}, nil
+	}
+
+	err = r.omitTinkerbellMachineTemplates(ctx, tinkerbellScope)
+	if err != nil {
+		return controller.Result{}, err
+	}
+
 	return controller.Result{}, nil
 }
 
@@ -173,62 +186,53 @@ func (r *Reconciler) DetectOperation(ctx context.Context, log logr.Logger, tinke
 	}
 
 	wantVersionChange := currentKCP.Spec.Version != tinkerbellScope.ControlPlane.KubeadmControlPlane.Spec.Version
-	cpWantScaleChange := *currentKCP.Spec.Replicas != *tinkerbellScope.ControlPlane.KubeadmControlPlane.Spec.Replicas
-	workerWantScaleChange, err := r.WorkerReplicasDiff(ctx, tinkerbellScope)
-	if err != nil {
-		return "", err
-	}
-	wantScaleChange := workerWantScaleChange || cpWantScaleChange
 
 	// The restriction that not allowing scaling and rolling is covered in webhook.
 	op := NoChange
-	switch {
-	case wantScaleChange:
-		op = ScaleOperation
-	case wantVersionChange:
+	if wantVersionChange {
 		op = K8sVersionUpgradeOperation
 	}
 	log.Info("Operation detected", "operation", op)
 	return op, nil
 }
 
-// WorkerReplicasDiff indicates if there's difference between current and desired worker node groups.
-func (r *Reconciler) WorkerReplicasDiff(ctx context.Context, tinkerbellScope *Scope) (bool, error) {
-	workerWantScaleChange := false
-	for _, wnc := range tinkerbellScope.ClusterSpec.Cluster.Spec.WorkerNodeGroupConfigurations {
-		md := &clusterv1.MachineDeployment{}
-		mdName := clusterapi.MachineDeploymentName(tinkerbellScope.ClusterSpec.Cluster, wnc)
-		key := types.NamespacedName{Namespace: constants.EksaSystemNamespace, Name: mdName}
-		err := r.client.Get(ctx, key, md)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				workerWantScaleChange = true
-				break
-			} else {
-				return workerWantScaleChange, errors.Wrap(err, "comparing worker replicas diff")
-			}
-		}
-		if int(*md.Spec.Replicas) != *wnc.Count {
-			workerWantScaleChange = true
-			break
-		}
-	}
-	return workerWantScaleChange, nil
-}
-
-// OmitMachineTemplate omits control plane and worker machine template on scaling update.
-func (r *Reconciler) OmitMachineTemplate(ctx context.Context, log logr.Logger, tinkerbellScope *Scope) (controller.Result, error) {
-	log = log.WithValues("phase", "OmitMachineTemplate")
-	o, err := r.DetectOperation(ctx, log, tinkerbellScope)
+func (r *Reconciler) omitTinkerbellMachineTemplates(ctx context.Context, tinkerbellScope *Scope) error { //nolint:gocyclo
+	currentKCP, err := controller.GetKubeadmControlPlane(ctx, r.client, tinkerbellScope.ClusterSpec.Cluster)
 	if err != nil {
-		return controller.Result{}, err
+		return errors.Wrap(err, "failed to get kubeadmcontrolplane")
 	}
-	if o == ScaleOperation || o == NoChange {
-		tinkerbell.OmitTinkerbellCPMachineTemplate(tinkerbellScope.ControlPlane)
-		tinkerbell.OmitTinkerbellWorkersMachineTemplate(tinkerbellScope.Workers)
-		log.Info("Machine Template omitted")
+
+	cpMachineTemplate, err := tinkerbell.GetMachineTemplate(ctx, clientutil.NewKubeClient(r.client), currentKCP.Spec.MachineTemplate.InfrastructureRef.Name, currentKCP.GetNamespace())
+	if err != nil && !apierrors.IsNotFound(err) {
+		return errors.Wrap(err, "failed to get controlplane machinetemplate")
 	}
-	return controller.Result{}, nil
+
+	if cpMachineTemplate != nil {
+		tinkerbellScope.ControlPlane.ControlPlaneMachineTemplate = nil
+		tinkerbellScope.ControlPlane.KubeadmControlPlane.Spec.MachineTemplate.InfrastructureRef.Name = cpMachineTemplate.GetName()
+	}
+
+	for i, wg := range tinkerbellScope.Workers.Groups {
+		machineDeployment, err := controller.GetMachineDeployment(ctx, r.client, tinkerbellScope.ClusterSpec.Cluster, wg.MachineDeployment.GetName())
+		if err != nil {
+			return errors.Wrap(err, "failed to get workernode group machinedeployment")
+		}
+		if machineDeployment == nil {
+			continue
+		}
+
+		workerMachineTemplate, err := tinkerbell.GetMachineTemplate(ctx, clientutil.NewKubeClient(r.client), machineDeployment.Spec.Template.Spec.InfrastructureRef.Name, machineDeployment.GetNamespace())
+		if err != nil && !apierrors.IsNotFound(err) {
+			return errors.Wrap(err, "failed to get workernode group machinetemplate")
+		}
+
+		if workerMachineTemplate != nil {
+			tinkerbellScope.Workers.Groups[i].ProviderMachineTemplate = nil
+			tinkerbellScope.Workers.Groups[i].MachineDeployment.Spec.Template.Spec.InfrastructureRef.Name = workerMachineTemplate.GetName()
+		}
+	}
+
+	return nil
 }
 
 // ReconcileControlPlane applies the control plane CAPI objects to the cluster.
@@ -260,7 +264,6 @@ func (r *Reconciler) ReconcileWorkerNodes(ctx context.Context, log logr.Logger, 
 		r.GenerateSpec,
 		r.ValidateHardware,
 		r.ValidateRufioMachines,
-		r.OmitMachineTemplate,
 		r.ReconcileWorkers,
 	).Run(ctx, log, NewScope(clusterSpec))
 }
