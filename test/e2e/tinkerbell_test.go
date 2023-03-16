@@ -1000,10 +1000,7 @@ func TestTinkerbellKubernetes125UbuntuMulticlusterWorkerNodeScaleUpAPI(t *testin
 	managementCluster := framework.NewClusterE2ETest(
 		t,
 		provider,
-		framework.WithClusterFiller(
-			api.WithKubernetesVersion(v1alpha1.Kube125),
-			api.WithEtcdCountIfExternal(0),
-		),
+		framework.WithClusterFiller(api.WithKubernetesVersion(v1alpha1.Kube125)),
 		framework.WithControlPlaneHardware(2),
 		framework.WithWorkerHardware(2),
 	)
@@ -1017,7 +1014,7 @@ func TestTinkerbellKubernetes125UbuntuMulticlusterWorkerNodeScaleUpAPI(t *testin
 			provider,
 			framework.WithClusterName(test.NewWorkloadClusterName()),
 			framework.WithClusterFiller(
-				api.WithKubernetesVersion(v1alpha1.Kube124),
+				api.WithKubernetesVersion(v1alpha1.Kube125),
 				api.WithManagementCluster(managementCluster.ClusterName),
 				api.WithEtcdCountIfExternal(0),
 				api.RemoveAllWorkerNodeGroups(),
