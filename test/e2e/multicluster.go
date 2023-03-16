@@ -82,19 +82,20 @@ func runSimpleWorkloadUpgradeFlowForBareMetal(test *framework.MulticlusterE2ETes
 }
 
 func runWorkloadClusterUpgradeFlowAPIForBareMetal(test *framework.MulticlusterE2ETest, filler ...api.ClusterConfigFiller) {
-	test.CreateManagementCluster()
-	test.RunInWorkloadClusters(func(wc *framework.WorkloadCluster) {
-		wc.GenerateClusterConfig()
-		wc.WaitForAvailableHardware()
-		wc.PowerOffHardware()
-		wc.ApplyClusterManifest()
-		wc.WaitForKubeconfig()
-		wc.ValidateClusterState()
-		wc.UpdateClusterConfig(filler...)
-		wc.ApplyClusterManifest()
-		wc.ValidateClusterState()
-		wc.DeleteClusterWithKubectl()
-		wc.ValidateClusterDelete()
+	test.CreateTinkerbellManagementCluster()
+	test.RunInWorkloadClusters(func(w *framework.WorkloadCluster) {
+		w.GenerateClusterConfig()
+		w.WaitForAvailableHardware()
+		w.PowerOffHardware()
+		w.ApplyClusterManifest()
+		w.WaitForKubeconfig()
+		w.ValidateClusterState()
+		w.UpdateClusterConfig(filler...)
+		w.ApplyClusterManifest()
+		w.ValidateClusterState()
+		w.DeleteClusterWithKubectl()
+		w.ValidateClusterDelete()
+		w.ValidateHardwareDecommissioned()
 	})
 	test.ManagementCluster.StopIfFailed()
 	test.DeleteManagementCluster()
