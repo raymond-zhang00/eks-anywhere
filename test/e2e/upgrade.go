@@ -66,7 +66,7 @@ func runWorkloadClusterUpgradeFlowAPI(test *framework.MulticlusterE2ETest, fille
 
 func runWorkloadClusterUpgradeFlowAPIForBareMetal(test *framework.MulticlusterE2ETest, filler ...api.ClusterConfigFiller) {
 	test.CreateManagementCluster()
-	test.RunConcurrentlyInWorkloadClusters(func(wc *framework.WorkloadCluster) {
+	test.RunInWorkloadClusters(func(wc *framework.WorkloadCluster) {
 		wc.GenerateClusterConfig()
 		wc.WaitForAvailableHardware()
 		wc.PowerOffHardware()
