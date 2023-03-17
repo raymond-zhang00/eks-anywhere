@@ -173,7 +173,6 @@ func TestReconcilerReconcileControlPlaneScaleSuccess(t *testing.T) {
 	tt.Expect(err).NotTo(HaveOccurred())
 	_, err = tt.reconciler().DetectOperation(tt.ctx, logger, scope)
 	tt.Expect(err).NotTo(HaveOccurred())
-	_, _ = tt.reconciler().OmitMachineTemplate(tt.ctx, logger, scope)
 	result, err := tt.reconciler().ReconcileControlPlane(tt.ctx, logger, scope)
 
 	tt.Expect(err).NotTo(HaveOccurred())
@@ -397,8 +396,6 @@ func TestReconcilerReconcileWorkersScaleSuccess(t *testing.T) {
 	scope.Workers = tinkWorker(tt.cluster.Name, func(w *tinkerbell.Workers) {
 		w.Groups[0].MachineDeployment.Spec.Replicas = ptr.Int32(2)
 	})
-	_, err := tt.reconciler().OmitMachineTemplate(tt.ctx, logger, scope)
-	tt.Expect(err).NotTo(HaveOccurred())
 	result, err := tt.reconciler().ReconcileWorkers(tt.ctx, logger, scope)
 
 	tt.Expect(err).NotTo(HaveOccurred())
@@ -724,29 +721,6 @@ func TestReconciler_DetectOperationFail(t *testing.T) {
 	tt := newReconcilerTest(t)
 	tt.client = fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
 	_, err := tt.reconciler().DetectOperation(tt.ctx, test.NewNullLogger(), &reconciler.Scope{ClusterSpec: &clusterspec.Spec{Config: &clusterspec.Config{Cluster: &anywherev1.Cluster{}}}})
-	tt.Expect(err).To(MatchError(ContainSubstring("no kind is registered for the type")))
-}
-
-func TestWorkerReplicasDiffFail(t *testing.T) {
-	tt := newReconcilerTest(t)
-	tt.client = fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
-	scope := &reconciler.Scope{
-		ClusterSpec: &clusterspec.Spec{
-			Config: &clusterspec.Config{
-				Cluster: &anywherev1.Cluster{
-					Spec: anywherev1.ClusterSpec{
-						WorkerNodeGroupConfigurations: []anywherev1.WorkerNodeGroupConfiguration{
-							{
-								Name: "md-0",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	_, err := tt.reconciler().WorkerReplicasDiff(tt.ctx, scope)
 	tt.Expect(err).To(MatchError(ContainSubstring("no kind is registered for the type")))
 }
 
