@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -156,15 +157,6 @@ func (r *Reconciler) GenerateSpec(ctx context.Context, log logr.Logger, tinkerbe
 	}
 	tinkerbellScope.Workers = w
 
-	o, err := r.DetectOperation(ctx, log, tinkerbellScope)
-	if err != nil {
-		return controller.Result{}, err
-	}
-
-	if o == K8sVersionUpgradeOperation || o == NewClusterOperation {
-		return controller.Result{}, nil
-	}
-
 	err = r.omitTinkerbellMachineTemplates(ctx, tinkerbellScope)
 	if err != nil {
 		return controller.Result{}, err
@@ -202,6 +194,10 @@ func (r *Reconciler) omitTinkerbellMachineTemplates(ctx context.Context, tinkerb
 		return errors.Wrap(err, "failed to get kubeadmcontrolplane")
 	}
 
+	if currentKCP == nil || currentKCP.Spec.Version != tinkerbellScope.ControlPlane.KubeadmControlPlane.Spec.Version {
+		return nil
+	}
+
 	cpMachineTemplate, err := tinkerbell.GetMachineTemplate(ctx, clientutil.NewKubeClient(r.client), currentKCP.Spec.MachineTemplate.InfrastructureRef.Name, currentKCP.GetNamespace())
 	if err != nil && !apierrors.IsNotFound(err) {
 		return errors.Wrap(err, "failed to get controlplane machinetemplate")
@@ -217,7 +213,8 @@ func (r *Reconciler) omitTinkerbellMachineTemplates(ctx context.Context, tinkerb
 		if err != nil {
 			return errors.Wrap(err, "failed to get workernode group machinedeployment")
 		}
-		if machineDeployment == nil {
+		if machineDeployment == nil ||
+			!reflect.DeepEqual(machineDeployment.Spec.Template.Spec.Version, tinkerbellScope.Workers.Groups[i].MachineDeployment.Spec.Template.Spec.Version) {
 			continue
 		}
 
