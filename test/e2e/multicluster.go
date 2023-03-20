@@ -83,6 +83,8 @@ func runSimpleWorkloadUpgradeFlowForBareMetal(test *framework.MulticlusterE2ETes
 
 func runWorkloadClusterUpgradeFlowAPIForBareMetal(test *framework.MulticlusterE2ETest, filler ...api.ClusterConfigFiller) {
 	test.CreateTinkerbellManagementCluster()
+	test.T.Log("Sleeping to allow management cluster editing.")
+	time.Sleep(5 * time.Minute)
 	test.RunInWorkloadClusters(func(w *framework.WorkloadCluster) {
 		w.GenerateClusterConfig()
 		w.WaitForAvailableHardware()
