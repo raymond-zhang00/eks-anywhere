@@ -554,6 +554,44 @@ func TestTinkerbellUpgradeMulticlusterWorkloadClusterK8sUpgrade124To125WithAPI(t
 	)
 }
 
+func TestTinkerbellUpgradeMulticlusterWorkloadClusterK8sUpgrade124To125WithAPIADDITONAL(t *testing.T) {
+	provider := framework.NewTinkerbell(t, framework.WithUbuntu124Tinkerbell())
+	managementCluster := framework.NewClusterE2ETest(
+		t,
+		provider,
+		framework.WithClusterFiller(
+			api.WithKubernetesVersion(v1alpha1.Kube124),
+			api.RemoveAllWorkerNodeGroups(),
+		),
+		framework.WithControlPlaneHardware(3),
+		framework.WithWorkerHardware(2),
+	)
+	test := framework.NewMulticlusterE2ETest(
+		t,
+		managementCluster,
+	)
+	test.WithWorkloadClusters(
+		framework.NewClusterE2ETest(
+			t,
+			provider,
+			framework.WithClusterName(test.NewWorkloadClusterName()),
+			framework.WithClusterFiller(
+				api.WithKubernetesVersion(v1alpha1.Kube124),
+				api.WithManagementCluster(managementCluster.ClusterName),
+				api.WithEtcdCountIfExternal(0),
+			),
+		),
+	)
+	runWorkloadClusterUpgradeFlowWithAPIForBareMetal(test,
+		api.ClusterToConfigFiller(
+			api.WithKubernetesVersion(v1alpha1.Kube125),
+		),
+		api.TinkerbellToConfigFiller(
+			framework.UpdateTinkerbellUbuntuTemplate125Var(),
+		),
+	)
+}
+
 // Nodes powered on
 func TestTinkerbellKubernetes126WithNodesPoweredOn(t *testing.T) {
 	test := framework.NewClusterE2ETest(
