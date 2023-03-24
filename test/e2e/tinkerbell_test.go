@@ -515,11 +515,11 @@ func TestTinkerbellUpgradeMulticlusterWorkloadClusterK8sUpgrade125To126(t *testi
 }
 
 func TestTinkerbellUpgradeMulticlusterWorkloadClusterK8sUpgrade124To125WithAPI(t *testing.T) {
-	provider := framework.NewTinkerbell(t, framework.WithUbuntu125Tinkerbell())
+	provider := framework.NewTinkerbell(t, framework.WithUbuntu124Tinkerbell())
 	managementCluster := framework.NewClusterE2ETest(
 		t,
 		provider,
-		framework.WithClusterFiller(api.WithKubernetesVersion(v1alpha1.Kube125)),
+		framework.WithClusterFiller(api.WithKubernetesVersion(v1alpha1.Kube124)),
 		framework.WithControlPlaneHardware(3),
 		framework.WithWorkerHardware(1),
 	)
